@@ -167,6 +167,64 @@ function compute() {
 }
 
 /* ------------------------------------------------
+   Phrases longues : renvoi à la ligne automatique
+   Un message du type \text{...} formule \text{...} est affiché
+   comme un paragraphe (texte normal + formules en ligne).
+   Les blocs alignés et les messages courts restent inchangés.
+------------------------------------------------ */
+
+function echapperHtml(t) {
+  return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function decouperTexte(s) {
+  const out = [];
+  let buf = "";
+  let i = 0;
+  while (i < s.length) {
+    if (s.startsWith("\\text{", i)) {
+      let j = i + 6, d = 1;
+      while (j < s.length && d > 0) {
+        if (s[j] === "{") d++;
+        else if (s[j] === "}") d--;
+        j++;
+      }
+      if (d !== 0) return null;
+      if (buf.trim()) out.push({ t: "math", v: buf });
+      buf = "";
+      out.push({ t: "text", v: s.slice(i + 6, j - 1) });
+      i = j;
+    } else {
+      buf += s[i];
+      i++;
+    }
+  }
+  if (buf.trim()) out.push({ t: "math", v: buf });
+  return out;
+}
+
+function rendreLatex(contenu, div) {
+  const brut = "$$" + contenu + "$$";
+  if (contenu.indexOf("\\text{") < 0) return brut;
+  if (contenu.indexOf("\\begin") >= 0 || contenu.indexOf("\\\\") >= 0) return brut;
+  const morceaux = decouperTexte(contenu);
+  if (!morceaux) return brut;
+  let longueurTexte = 0;
+  for (const m of morceaux) {
+    if (m.t === "text") {
+      if (m.v.indexOf("\\") >= 0) return brut;
+      longueurTexte += m.v.length;
+    }
+  }
+  if (longueurTexte < 70 && !(contenu.length > 150 && longueurTexte >= 12)) return brut;
+  div.style.lineHeight = "1.9";
+  div.style.fontFamily = "\"Latin Modern Roman\", \"Computer Modern\", \"Times New Roman\", serif";
+  return morceaux.map(m => m.t === "text"
+    ? echapperHtml(m.v)
+    : "\\(" + echapperHtml(m.v) + "\\)").join("");
+}
+
+/* ------------------------------------------------
    Affichage des résultats renvoyés par Flask
 ------------------------------------------------ */
 
@@ -179,8 +237,9 @@ function afficherResultats(data) {
     div.className = "msg";
 
     if (msg.type === "latex") {
+      if (msg.content === null || msg.content === undefined) return;
       div.classList.add("latex");
-      div.innerHTML = "$$" + msg.content + "$$";
+      div.innerHTML = rendreLatex(msg.content, div);
     }
     else if (msg.type === "info") {
       div.classList.add("info");
